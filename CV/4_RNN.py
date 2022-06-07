@@ -1,27 +1,28 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+import torch.optim as optim
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Hyper-parameters
-input_size = 784
+# Hyper-parameter
+seq_len = 28
+input_size = 28
 hidden_size = 128
+num_layers = 2
 num_classes = 10
-num_epochs = 5
 batch_size = 100
-learning_rate = 0.001
+num_epochs = 2
+learning_rate = 0.003
 
-# MNist dataset
+# MNIST dataset
 train_dataset = torchvision.datasets.MNIST(root='../../data',
                                            train=True,
                                            transform=transforms.ToTensor(),
                                            download=True)
-
 test_dataset = torchvision.datasets.MNIST(root='../../data',
                                           train=False,
                                           transform=transforms.ToTensor())
@@ -30,28 +31,34 @@ test_dataset = torchvision.datasets.MNIST(root='../../data',
 train_loader = DataLoader(dataset=train_dataset,
                           batch_size=batch_size,
                           shuffle=True)
-
 test_loader = DataLoader(dataset=test_dataset,
                          batch_size=batch_size,
                          shuffle=False)
 
 
-# Fully connected neural network with one hidden layer
-class FFN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_classes):
-        super(FFN, self).__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_size, num_classes)
+# Bidirectional recurrent neural network (many-to-one)
+class BiRNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(BiRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(hidden_size*2, num_classes)  # 2 for bidirection
 
     def forward(self, x):
-        out = self.fc1(x)
-        out = self.relu(out)
-        out = self.fc2(out)
+        # Set initial states
+        h0 = torch.zeros(self.num_layers*2, x.size(0), self.hidden_size).to(device)  # 2 for bidirection
+        c0 = torch.zeros(self.num_layers*2, x.size(0), self.hidden_size).to(device)
+
+        # Forward propagation LSTM
+        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_len, hidden_size*2)
+
+        # Decode the hidden state of the last time step
+        out = self.fc(out[:, -1, :])
         return out
 
 
-model = FFN(input_size, hidden_size, num_classes).to(device)
+model = BiRNN(input_size, hidden_size, num_layers, num_classes).to(device)
 
 # Loss and optimizer
 criterion = nn.CrossEntropyLoss()
@@ -61,15 +68,12 @@ optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 total_step = len(train_loader)
 for epoch in range(num_epochs):
     for i, (images, labels) in enumerate(train_loader):
-        # Move tensors to the configured device
-        images = images.reshape(-1, 28*28).to(device)
+        images = images.reshape(-1, seq_len, input_size).to(device)
         labels = labels.to(device)
 
-        # Forward pass
         outputs = model(images)
         loss = criterion(outputs, labels)
 
-        # Backward and optimize
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -78,14 +82,12 @@ for epoch in range(num_epochs):
             print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'
                   .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
 
-
 # Test the model
-# In test phase, we don't need to compute gradients (for memory efficiency)
 with torch.no_grad():
     correct = 0
     total = 0
     for images, labels in test_loader:
-        images = images.reshape(-1, 28*28).to(device)
+        images = images.reshape(-1, seq_len, input_size).to(device)
         labels = labels.to(device)
 
         outputs = model(images)
@@ -93,9 +95,9 @@ with torch.no_grad():
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
 
-    print('Accuracy of the network on the 10000 test images: {} %'.format(100 * correct/total))
+    print('Test accuracy of the model on the 10000 test images: {} %'.format(100 * correct/total))
 
+# Save the model
+torch.save(model.state_dict(), '../../checkpoint/RNN_Model.ckpt')
 
-# Save the model checkpoint
-torch.save(model.state_dict(), '../../checkpoint/FFN_model.ckpt')
 

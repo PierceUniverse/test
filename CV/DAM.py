@@ -10,7 +10,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Hyper-parameters
 input_size = 784
-hidden_size = 128
+hidden_size = 500
 num_classes = 10
 num_epochs = 5
 batch_size = 100
@@ -51,7 +51,50 @@ class FFN(nn.Module):
         return out
 
 
-model = FFN(input_size, hidden_size, num_classes).to(device)
+class DAM_Net(nn.Module):
+    def __init__(self, input_size, num_classes):
+        super(DAM_Net, self).__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(input_size, 128),
+            nn.ReLU(),
+            DAM(128),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            DAM(128),
+            nn.Linear(128, num_classes)
+        )
+
+    def forward(self, x):
+        return self.layers(x)
+
+
+class DAM(nn.Module):
+    """ Discriminative Masking Layer (1-D) """
+
+    def __init__(self, in_dim):
+        super(DAM, self).__init__()
+        self.in_dim = in_dim
+
+        self.mu = torch.arange(self.in_dim).float() / self.in_dim * 5.0
+        self.mu = nn.Parameter(self.mu, requires_grad=False)
+        self.beta = nn.Parameter(torch.ones(1), requires_grad=True)
+        self.alpha = nn.Parameter(torch.ones(1), requires_grad=False)
+        self.register_parameter('mu', self.mu)
+        self.register_parameter('beta', self.beta)
+        self.register_parameter('alpha', self.alpha)
+        self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        return x * self.mask()
+
+    def mask(self):
+        return self.relu(self.tanh((self.alpha ** 2) * (self.mu + self.beta)))
+
+
+
+model = DAM_Net(input_size, num_classes).to(device)
 
 # Loss and optimizer
 criterion = nn.CrossEntropyLoss()
@@ -97,5 +140,5 @@ with torch.no_grad():
 
 
 # Save the model checkpoint
-torch.save(model.state_dict(), '../../checkpoint/FFN_model.ckpt')
+torch.save(model.state_dict(), '../../checkpoint/DAM_model.ckpt')
 
