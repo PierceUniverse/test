@@ -4,6 +4,7 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -17,12 +18,12 @@ batch_size = 100
 learning_rate = 0.001
 
 # MNist dataset
-train_dataset = torchvision.datasets.MNIST(root='../../data',
+train_dataset = torchvision.datasets.MNIST(root='../../../../data',
                                            train=True,
                                            transform=transforms.ToTensor(),
                                            download=True)
 
-test_dataset = torchvision.datasets.MNIST(root='../../data',
+test_dataset = torchvision.datasets.MNIST(root='../../../../data',
                                           train=False,
                                           transform=transforms.ToTensor())
 
@@ -93,6 +94,7 @@ class DAM(nn.Module):
         return self.relu(self.tanh((self.alpha ** 2) * (self.mu + self.beta)))
 
 
+#writer = SummaryWriter(log_dir=r'..\..\..\..\logs')
 
 model = DAM_Net(input_size, num_classes).to(device)
 
@@ -117,6 +119,8 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
 
+        #writer.add_scalars('train loss', {"loss": loss, "epoch": epoch+1})
+
         if (i+1) % 100 == 0:
             print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'
                   .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
@@ -140,5 +144,5 @@ with torch.no_grad():
 
 
 # Save the model checkpoint
-torch.save(model.state_dict(), '../../checkpoint/DAM_model.ckpt')
+torch.save(model.state_dict(), '../../../../checkpoint/DAM_model.ckpt')
 
